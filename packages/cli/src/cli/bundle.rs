@@ -183,29 +183,43 @@ impl Bundle {
             bail!("\n\nBundle publisher was not provided in `Dioxus.toml`. Add it as:\n\n[bundle]\npublisher = \"MyCompany\"\n\n");
         }
 
-        if cfg!(windows) {
-            let windows_icon_override = krate.config.bundle.windows.as_ref().map(|w| &w.icon_path);
-            if windows_icon_override.is_none() {
-                let icon_path = bundle_settings
-                    .icon
-                    .as_ref()
-                    .and_then(|icons| icons.first());
-
-                if let Some(icon_path) = icon_path {
-                    bundle_settings.icon = Some(vec![icon_path.into()]);
-                };
-            }
+        fn canonicalize_icon_path(build: &BuildRequest, icon: &mut String) -> Result<(), Error> {
+            let icon_path = build
+                .crate_dir()
+                .join(&icon)
+                .canonicalize()
+                .with_context(|| format!("Failed to canonicalize path to icon {icon:?}"))?;
+            *icon = icon_path.to_string_lossy().to_string();
+            Ok(())
         }
 
         // resolve the icon relative to the crate, not the current working directory
         if let Some(icons) = bundle_settings.icon.as_mut() {
-            for icon in icons {
-                let icon_path = build
-                    .crate_dir()
-                    .join(&icon)
-                    .canonicalize()
-                    .with_context(|| format!("Failed to canonicalize path to icon {icon:?}"))?;
-                *icon = icon_path.to_string_lossy().to_string();
+            for icon in icons.iter_mut() {
+                canonicalize_icon_path(&build, icon)?;
+            }
+        }
+
+        #[allow(deprecated)]
+        if cfg!(windows) {
+            let mut windows_icon_path = bundle_settings
+                .windows
+                .icon_path
+                .to_string_lossy()
+                .to_string();
+            canonicalize_icon_path(&build, &mut windows_icon_path)?;
+            bundle_settings.windows.icon_path = PathBuf::from(&windows_icon_path);
+
+            let windows_icon_override = krate.config.bundle.windows.as_ref().map(|w| &w.icon_path);
+            let icon_path = bundle_settings
+                .icon
+                .as_ref()
+                .and_then(|icons| icons.first());
+            if windows_icon_override.is_none() {
+                if let Some(icon) = icon_path {
+                    bundle_settings.windows.icon_path = PathBuf::from(&icon);
+                    bundle_settings.icon = Some(vec![icon.to_string()]);
+                };
             }
         }
 
