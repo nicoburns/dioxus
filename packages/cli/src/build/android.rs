@@ -200,50 +200,42 @@ impl BuildRequest {
         };
         let hbs = handlebars::Handlebars::new();
 
+        /// Macro for reducing boilerplate associated with copying default assets into the project.
+        macro_rules! copy_asset {
+            ($base:expr, $path:literal) => {
+                // Resolve the output path
+                let outpath: PathBuf = $base.join($path);
+
+                // Ensure the output directory exists
+                let outdir = outpath.parent().unwrap();
+                create_dir_all(&outdir)?;
+
+                // Include the input in the binary
+                let content = include_bytes!(concat!("../../assets/android/gen/", $path));
+
+                // If the file ends with ".hbs", then run it through handlebars templating
+                // and strip the ".hbs" from the final filename
+                if $path.ends_with(".hbs") {
+                    #[allow(invalid_from_utf8)] // generic code path
+                    let content = hbs.render_template(str::from_utf8(content)?, &hbs_data)?;
+                    let outpath = PathBuf::from(outpath.to_str().unwrap().trim_end_matches(".hbs"));
+                    write(outpath, content)?;
+                } else {
+                    write(outpath, content)?;
+                }
+            };
+        }
+
         // Top-level gradle config
-        write(
-            root.join("build.gradle.kts"),
-            include_bytes!("../../assets/android/gen/build.gradle.kts"),
-        )?;
-        write(
-            root.join("gradle.properties"),
-            include_bytes!("../../assets/android/gen/gradle.properties"),
-        )?;
-        write(
-            root.join("gradlew"),
-            include_bytes!("../../assets/android/gen/gradlew"),
-        )?;
-        write(
-            root.join("gradlew.bat"),
-            include_bytes!("../../assets/android/gen/gradlew.bat"),
-        )?;
-        write(
-            root.join("settings.gradle"),
-            include_bytes!("../../assets/android/gen/settings.gradle"),
-        )?;
-
-        // Then the wrapper and its properties
-        write(
-            wrapper.join("gradle-wrapper.properties"),
-            include_bytes!("../../assets/android/gen/gradle/wrapper/gradle-wrapper.properties"),
-        )?;
-        write(
-            wrapper.join("gradle-wrapper.jar"),
-            include_bytes!("../../assets/android/gen/gradle/wrapper/gradle-wrapper.jar"),
-        )?;
-
-        // Now the app directory
-        write(
-            app.join("build.gradle.kts"),
-            hbs.render_template(
-                include_str!("../../assets/android/gen/app/build.gradle.kts.hbs"),
-                &hbs_data,
-            )?,
-        )?;
-        write(
-            app.join("proguard-rules.pro"),
-            include_bytes!("../../assets/android/gen/app/proguard-rules.pro"),
-        )?;
+        copy_asset!(root, "build.gradle.kts");
+        copy_asset!(root, "gradle.properties");
+        copy_asset!(root, "gradlew");
+        copy_asset!(root, "gradlew.bat");
+        copy_asset!(root, "settings.gradle");
+        copy_asset!(root, "gradle/wrapper/gradle-wrapper.properties");
+        copy_asset!(root, "gradle/wrapper/gradle-wrapper.jar");
+        copy_asset!(root, "app/build.gradle.kts.hbs");
+        copy_asset!(root, "app/proguard-rules.pro");
 
         // Copy additional ProGuard rule files from Dioxus.toml [android] config
         for rule_file in &self.config.android.proguard_rules {
@@ -269,111 +261,35 @@ impl BuildRequest {
                 &hbs_data,
             )?,
         };
-
-        write(
-            app.join("src").join("main").join("AndroidManifest.xml"),
-            manifest_xml,
-        )?;
+        write(app_main.join("AndroidManifest.xml"), manifest_xml)?;
 
         // Write the main activity manually since tao dropped support for it
         let main_activity = match self.config.application.android_main_activity.as_deref() {
             Some(activity) => std::fs::read_to_string(self.package_manifest_dir().join(activity))
                 .context("Failed to locate custom MainActivity.kt")?,
-            _ => hbs.render_template(
-                include_str!("../../assets/android/MainActivity.kt.hbs"),
-                &hbs_data,
-            )?,
+            _ => {
+                let template = include_str!("../../assets/android/MainActivity.kt.hbs");
+                hbs.render_template(template, &hbs_data)?
+            }
         };
-        write(
-            self.wry_android_kotlin_files_out_dir()
-                .join("MainActivity.kt"),
-            main_activity,
-        )?;
+        write(app_kotlin_out.join("MainActivity.kt"), main_activity)?;
 
         // Write the res folder, containing stuff like default icons, colors, and menubars.
-        let res = app_main.join("res");
-        create_dir_all(&res)?;
-        create_dir_all(res.join("values"))?;
-        write(
-            res.join("values").join("strings.xml"),
-            hbs.render_template(
-                include_str!("../../assets/android/gen/app/src/main/res/values/strings.xml.hbs"),
-                &hbs_data,
-            )?,
-        )?;
-        write(
-            res.join("values").join("colors.xml"),
-            include_bytes!("../../assets/android/gen/app/src/main/res/values/colors.xml"),
-        )?;
-        write(
-            res.join("values").join("styles.xml"),
-            include_bytes!("../../assets/android/gen/app/src/main/res/values/styles.xml"),
-        )?;
-
-        create_dir_all(res.join("xml"))?;
-        write(
-            res.join("xml").join("network_security_config.xml"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/xml/network_security_config.xml"
-            ),
-        )?;
-
-        create_dir_all(res.join("drawable"))?;
-        write(
-            res.join("drawable").join("ic_launcher_background.xml"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/drawable/ic_launcher_background.xml"
-            ),
-        )?;
-        create_dir_all(res.join("drawable-v24"))?;
-        write(
-            res.join("drawable-v24").join("ic_launcher_foreground.xml"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/drawable-v24/ic_launcher_foreground.xml"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-anydpi-v26"))?;
-        write(
-            res.join("mipmap-anydpi-v26").join("ic_launcher.xml"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-hdpi"))?;
-        write(
-            res.join("mipmap-hdpi").join("ic_launcher.webp"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-hdpi/ic_launcher.webp"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-mdpi"))?;
-        write(
-            res.join("mipmap-mdpi").join("ic_launcher.webp"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-mdpi/ic_launcher.webp"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-xhdpi"))?;
-        write(
-            res.join("mipmap-xhdpi").join("ic_launcher.webp"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-xhdpi/ic_launcher.webp"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-xxhdpi"))?;
-        write(
-            res.join("mipmap-xxhdpi").join("ic_launcher.webp"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-xxhdpi/ic_launcher.webp"
-            ),
-        )?;
-        create_dir_all(res.join("mipmap-xxxhdpi"))?;
-        write(
-            res.join("mipmap-xxxhdpi").join("ic_launcher.webp"),
-            include_bytes!(
-                "../../assets/android/gen/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp"
-            ),
-        )?;
+        copy_asset!(root, "app/src/main/res/values/strings.xml.hbs");
+        copy_asset!(root, "app/src/main/res/values/colors.xml");
+        copy_asset!(root, "app/src/main/res/values/styles.xml");
+        copy_asset!(root, "app/src/main/res/xml/network_security_config.xml");
+        copy_asset!(root, "app/src/main/res/drawable/ic_launcher_background.xml");
+        copy_asset!(
+            root,
+            "app/src/main/res/drawable-v24/ic_launcher_foreground.xml"
+        );
+        copy_asset!(root, "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml");
+        copy_asset!(root, "app/src/main/res/mipmap-hdpi/ic_launcher.webp");
+        copy_asset!(root, "app/src/main/res/mipmap-mdpi/ic_launcher.webp");
+        copy_asset!(root, "app/src/main/res/mipmap-xhdpi/ic_launcher.webp");
+        copy_asset!(root, "app/src/main/res/mipmap-xxhdpi/ic_launcher.webp");
+        copy_asset!(root, "app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp");
 
         Ok(())
     }
