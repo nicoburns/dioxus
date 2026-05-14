@@ -3355,6 +3355,7 @@ dependencies = [
  "ignore",
  "image",
  "imagequant",
+ "imagesize",
  "include_dir",
  "indoc",
  "itertools 0.14.0",

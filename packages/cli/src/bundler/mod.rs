@@ -1,3 +1,4 @@
+mod icons;
 mod ios;
 mod linux;
 mod macos;
@@ -6,6 +7,7 @@ mod updater;
 mod windows;
 
 use crate::PackageType;
+use crate::bundler::icons::Icons;
 use crate::{BuildRequest, DebianSettings, MacOsSettings, WindowsSettings};
 use anyhow::Context;
 use anyhow::Result;
@@ -358,6 +360,14 @@ impl<'a> BundleContext<'a> {
             }
         }
         Ok(icons)
+    }
+
+    /// Icons from config, canonicalized relative to the crate dir, and with sizes and formats.
+    pub(crate) fn icons(&self) -> Result<Icons> {
+        match self.build.config.bundle.icon.as_ref() {
+            Some(icons) => Icons::new(&self.build.crate_dir(), icons),
+            None => Ok(Icons::default()),
+        }
     }
 
     /// Copy resources to the given path.
